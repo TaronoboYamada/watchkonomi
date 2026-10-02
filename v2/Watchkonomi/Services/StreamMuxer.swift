@@ -24,6 +24,7 @@ final class StreamMuxer {
     private let windowSize: Int
     private let readySegments: Int
 
+    private let lock = NSLock()
     private var pending = Data()
     private var current = Data()
     private var segmentStartPTS: Double?
@@ -42,14 +43,16 @@ final class StreamMuxer {
     }
 
     func beginConnection() {
-        state = .connecting
+        setState(.connecting)
     }
 
     func fail(_ message: String) {
-        state = .failed(message)
+        setState(.failed(message))
     }
 
     func ingest(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
         pending.append(data)
         let packets = TSParser.extractPackets(pending: &pending)
         for packet in packets {
@@ -72,16 +75,20 @@ final class StreamMuxer {
     }
 
     func stop() {
+        lock.lock()
+        defer { lock.unlock() }
         pending = Data()
         current = Data()
         segmentStartPTS = nil
         packetsWithoutPTS = 0
         segments = []
         firstMediaSequence = 0
-        state = .idle
+        setState(.idle)
     }
 
     func playlist() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
         guard isReady else { return nil }
         let maxDuration = segments.map(\.duration).max() ?? targetSegmentSeconds
         let target = max(1, Int(ceil(maxDuration)))
@@ -98,6 +105,8 @@ final class StreamMuxer {
     }
 
     func segmentData(index: Int) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
         let position = index - firstMediaSequence
         guard position >= 0, position < segments.count else { return nil }
         return segments[position].data
@@ -108,10 +117,20 @@ final class StreamMuxer {
         current = Data()
         segmentStartPTS = nil
         packetsWithoutPTS = 0
-        state = .onair
+        setState(.onair)
         while segments.count > windowSize {
             segments.removeFirst()
             firstMediaSequence += 1
+        }
+    }
+
+    private func setState(_ newState: MuxerState) {
+        if Thread.isMainThread {
+            state = newState
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.state = newState
+            }
         }
     }
 }
