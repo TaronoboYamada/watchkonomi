@@ -58,7 +58,7 @@ final class StreamerHandler: RPBroadcastSampleHandler {
 
     override func broadcastFinished() {
         server?.stop()
-        bonjour?.unpublish()
+        bonjour?.stop()
         bonjour = nil
         muxer?.finish()
         if let dir = rootDir {
@@ -91,7 +91,7 @@ final class StreamerHandler: RPBroadcastSampleHandler {
         }
 
         let minInterval = CMTime(seconds: 1.0 / 30.0, preferredTimescale: 600)
-        if let last = lastEncodedPTS, CMTimeCompare(pts, last.adding(minInterval)) < 0 {
+        if let last = lastEncodedPTS, CMTimeCompare(pts, CMTimeAdd(last, minInterval)) < 0 {
             return
         }
         lastEncodedPTS = pts
@@ -115,9 +115,8 @@ final class StreamerHandler: RPBroadcastSampleHandler {
 
         ciContext.render(
             scaled,
-            toCVPixelBuffer: output,
-            commandQueue: nil,
-            bounds: CGRect(x: 0, y: 0, width: size.width, height: size.height)
+            to: output,
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!
         )
 
         muxer?.appendVideo(
@@ -137,41 +136,17 @@ final class StreamerHandler: RPBroadcastSampleHandler {
         let asbd = asbdPointer.pointee
         guard
             asbd.mFormatID == kAudioFormatLinearPCM,
-            asbd.mBitsPerSample == 32,
+            asbd.mBitsPerChannel == 32,
             (asbd.mFormatFlags & kLinearPCMFormatFlagIsFloat) != 0
         else { return }
 
-        var ablPointer: UnsafeMutablePointer<AudioBuffer>?
-        guard
-            CMSampleBufferGetAudioBufferListProperty(sampleBuffer, &ablPointer),
-            let ablPointer
-        else { return }
-        let bufferList = ablPointer.pointee
-
-        let channelCount = Int(asbd.mChannelsPerFrame)
-        guard channelCount > 0, bufferList.mNumberBuffers >= channelCount else { return }
-        let frameCount = AVAudioFrameCount(bufferList.mBuffers[0].mDataByteSize / 4 / asbd.mChannelsPerFrame)
-        guard frameCount > 0 else { return }
-
         let sampleRate = Double(asbd.mSampleRate)
-        guard
-            let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channelCount),
-            let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)
-        else { return }
-        pcmBuffer.frameLength = frameCount
-        guard let destination = pcmBuffer.floatChannelData else { return }
-        for channel in 0..<channelCount {
-            let source = bufferList.mBuffers[channel]
-            guard let sourceData = source.mData else { continue }
-            let count = min(Int(source.mDataByteSize) / 4, Int(frameCount))
-            destination[channel].update(from: sourceData.assumingMemoryBound(to: Float.self), count: count)
-        }
+        let channelCount = UInt32(asbd.mChannelsPerFrame)
+        guard sampleRate > 0, channelCount > 0 else { return }
 
-        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         muxer?.appendAudio(
-            pcmBuffer,
-            config: HLSMuxer.AudioConfig(sampleRate: sampleRate, channelCount: UInt32(channelCount)),
-            at: pts
+            sampleBuffer,
+            config: HLSMuxer.AudioConfig(sampleRate: sampleRate, channelCount: channelCount)
         )
     }
 }
