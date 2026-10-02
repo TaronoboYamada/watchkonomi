@@ -33,11 +33,11 @@ final class PlaybackModel: ObservableObject {
         pumpTask = Task.detached { [weak self] in
             do {
                 try await StreamPump.run(url: streamURL, muxer: muxer, session: KonomiTVClient.streamSession)
-                self?.muxer?.fail("ストリームが終了しました")
-                self?.failureMessage = "ストリームが終了しました"
+                muxer.fail("ストリームが終了しました")
+                await MainActor.run { self?.failureMessage = "ストリームが終了しました" }
             } catch {
-                self?.muxer?.fail("接続エラー")
-                self?.failureMessage = "接続エラー"
+                muxer.fail("接続エラー")
+                await MainActor.run { self?.failureMessage = "接続エラー" }
             }
         }
         for _ in 0..<150 {
