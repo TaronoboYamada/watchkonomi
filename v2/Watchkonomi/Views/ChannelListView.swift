@@ -33,7 +33,7 @@ struct ChannelListView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
-                    ForEach(groups) { group in
+                    ForEach(groups, id: \.label) { group in
                         Section(group.label) {
                             ForEach(group.channels) { channel in
                                 NavigationLink(value: channel) {

@@ -14,7 +14,7 @@ final class LoopbackServer {
         self.muxer = muxer
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = NWEndpoint.hostPort(
-            host: .ipv4([127, 0, 0, 1]),
+            host: .ipv4(0x7F000001),
             port: .any
         )
         let listener = NWListener(using: parameters)
@@ -81,7 +81,7 @@ private final class HTTPConnectionHandler {
     }
 
     private func receiveMore() {
-        connection.receive(minimumIncompleteLength: 1, timeout: .infinity) { [weak self] data, _, _, _ in
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, _ in
             guard let self, !self.done else { return }
             if let data, !data.isEmpty {
                 self.buffer.append(data)
