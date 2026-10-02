@@ -1,7 +1,8 @@
 import Foundation
+import Network
 
 @MainActor
-final class StreamDiscovery: NSObject, ObservableObject {
+final class StreamDiscovery: ObservableObject {
     enum State: Equatable {
         case scanning
         case found(URL)
@@ -9,71 +10,101 @@ final class StreamDiscovery: NSObject, ObservableObject {
 
     @Published private(set) var state: State = .scanning
 
-    private let browser = NSNetServiceBrowser()
-    private var resolvingService: NSNetService?
+    private var browser: NWBrowser?
+    private var connection: NWConnection?
 
     func start() {
-        guard browser.isSearching == false else { return }
-        browser.delegate = self
-        browser.searchForServices(withDomain: "", type: "_watchkonomi._tcp")
+        guard browser == nil else { return }
+        state = .scanning
+
+        let params = NWParameters()
+        params.includePeerToPeer = true
+
+        let browser = NWBrowser(for: .bonjour(type: "_watchkonomi._tcp", domain: nil), using: params)
+        browser.browseResultsChangedHandler = { [weak self] results, _ in
+            Task { @MainActor in
+                guard let self, case .scanning = self.state, let result = results.first else { return }
+                self.connect(to: result.endpoint)
+            }
+        }
+        browser.stateUpdateHandler = { [weak self] newState in
+            Task { @MainActor in
+                guard let self else { return }
+                if case .failed = newState {
+                    self.browser?.cancel()
+                    self.browser = nil
+                    self.connection?.cancel()
+                    self.connection = nil
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        self.start()
+                    }
+                }
+            }
+        }
+        browser.start(queue: .main)
+        self.browser = browser
     }
 
     func stop() {
-        browser.stop()
-        browser.delegate = nil
-        resolvingService = nil
+        browser?.cancel()
+        browser = nil
+        connection?.cancel()
+        connection = nil
         state = .scanning
     }
-}
 
-extension StreamDiscovery: NSNetServiceBrowserDelegate {
-    nonisolated func netServiceBrowser(_ browser: NSNetServiceBrowser, didFind service: NSNetService, moreComing: Bool) {
-        Task { @MainActor in
-            guard case .scanning = self.state else { return }
-            self.resolvingService = service
-            service.delegate = self
-            browser.resolve(service, timeout: 5)
-        }
-    }
-
-    nonisolated func netServiceBrowser(_ browser: NSNetServiceBrowser, didRemove service: NSNetService, moreComing: Bool) {
-        Task { @MainActor in
-            if self.resolvingService === service {
-                self.resolvingService = nil
-                self.state = .scanning
+    private func connect(to endpoint: NWEndpoint) {
+        connection?.cancel()
+        let connection = NWConnection(to: endpoint, using: .tcp)
+        self.connection = connection
+        connection.stateUpdateHandler = { [weak self] newState in
+            Task { @MainActor in
+                guard let self else { return }
+                switch newState {
+                case .ready:
+                    if let url = Self.streamURL(for: connection) {
+                        self.state = .found(url)
+                    } else {
+                        self.connection?.cancel()
+                        self.connection = nil
+                        self.state = .scanning
+                    }
+                case .failed:
+                    self.connection?.cancel()
+                    self.connection = nil
+                    self.state = .scanning
+                default:
+                    break
+                }
             }
         }
-    }
-}
-
-extension StreamDiscovery: NSNetServiceDelegate {
-    nonisolated func netServiceDidResolveAddress(_ sender: NSNetService) {
-        Task { @MainActor in
-            guard let ip = Self.ipv4Address(from: sender) else { return }
-            let port = sender.port
-            guard let url = URL(string: "http://\(ip):\(port)/index.m3u8") else { return }
-            self.state = .found(url)
-        }
+        connection.start(queue: .main)
     }
 
-    nonisolated func netService(_ sender: NSNetService, didNotResolve error: Error) {
-        Task { @MainActor in
-            if self.resolvingService === sender {
-                self.resolvingService = nil
-                self.state = .scanning
-            }
+    private static func streamURL(for connection: NWConnection) -> URL? {
+        var hostText: String?
+        var portValue: UInt16?
+
+        if let remote = connection.currentPath?.remoteEndpoint,
+           case let .hostPort(host, port) = remote {
+            hostText = Self.hostText(host)
+            portValue = port.rawValue
+        } else if case let .hostPort(host, port) = connection.endpoint {
+            hostText = Self.hostText(host)
+            portValue = port.rawValue
         }
+
+        guard let hostText, let portValue else { return nil }
+        return URL(string: "http://\(hostText):\(portValue)/index.m3u8")
     }
 
-    static func ipv4Address(from service: NSNetService) -> String? {
-        for raw in service.addresses {
-            let bytes = [UInt8](raw as Data)
-            guard bytes.count >= 8 else { continue }
-            let family = UInt16(bytes[0]) | (UInt16(bytes[1]) << 8)
-            if family == UInt16(AF_INET) {
-                return "\(bytes[4]).\(bytes[5]).\(bytes[6]).\(bytes[7])"
-            }
+    private static func hostText(_ host: NWEndpoint.Host) -> String {
+        var text = "\(host)".replacingOccurrences(of: ".local.", with: ".local")
+        if text.hasSuffix(".") { text.removeLast() }
+        if text.contains(":") && !text.hasPrefix("[") {
+            text = "[\(text)]"
         }
-        return nil
+        return text
     }
 }
