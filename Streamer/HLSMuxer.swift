@@ -121,7 +121,7 @@ final class HLSMuxer {
     private func startWriter(video: VideoConfig, audio: AudioConfig) {
         segmentIndex += 1
         do {
-            let writer = try AVAssetWriter(outputURL: segmentURL(index: segmentIndex), fileType: .mpeg2TransportStream)
+            let writer = try AVAssetWriter(outputURL: segmentURL(index: segmentIndex), fileType: AVFileType(rawValue: "public.mpeg-2-transport-stream"))
 
             let videoSettings: [String: Any] = [
                 AVVideoCodecKey: AVVideoCodecType.h264,
@@ -171,7 +171,7 @@ final class HLSMuxer {
 
     private func checkSegmentBoundary(at pts: CMTime) {
         guard let start = segmentStartPTS else { return }
-        guard CMTimeCompare(pts, start.adding(segmentDuration)) >= 0 else { return }
+        guard CMTimeCompare(pts, CMTimeAdd(start, segmentDuration)) >= 0 else { return }
         rotateSegment()
     }
 
@@ -180,7 +180,7 @@ final class HLSMuxer {
         state = .rotating
         videoInput.markAsFinished()
         audioInput.markAsFinished()
-        writer.finishWriting { [weak self] _ in
+        writer.finishWriting { [weak self] in
             self?.segmentCompleted()
         }
     }
@@ -238,61 +238,82 @@ final class HLSMuxer {
 
     private static func makeAudioSampleBuffer(from pcmBuffer: AVAudioPCMBuffer, at pts: CMTime) -> CMSampleBuffer? {
         let format = pcmBuffer.format
-        let byteSize = Int(pcmBuffer.frameLength) * Int(format.channelCount) * 4
-        guard byteSize > 0, let channelData = pcmBuffer.floatChannelData else { return nil }
+        let frameLength = Int(pcmBuffer.frameLength)
+        let channelCount = Int(format.channelCount)
+        guard frameLength > 0, channelCount > 0, let channelData = pcmBuffer.floatChannelData else { return nil }
+
+        var interleaved = [Float]()
+        interleaved.reserveCapacity(frameLength * channelCount)
+        for frame in 0..<frameLength {
+            for channel in 0..<channelCount {
+                interleaved.append(channelData[channel][frame])
+            }
+        }
+        let byteSize = interleaved.count * MemoryLayout<Float>.size
 
         var blockBuffer: CMBlockBuffer?
         guard
-            CMBlockBufferCreate(
-                allocator: kCFAllocatorDefault,
-                dataPointer: nil,
+            CMBlockBufferCreateWithMemoryBlock(
+                allocator: nil,
+                memoryBlock: nil,
+                blockLength: byteSize,
+                blockAllocator: nil,
+                customBlockSource: nil,
+                offsetToData: 0,
                 dataLength: byteSize,
-                dataToBeFree: nil,
-                allocatorContext: nil,
-                offsetWithinData: 0,
-                lengthOfData: byteSize,
-                mergeMethod: .noMerge,
+                flags: 0,
                 blockBufferOut: &blockBuffer
             ) == noErr,
             let blockBuffer
         else { return nil }
 
-        let channelCount = Int(format.channelCount)
-        for channel in 0..<channelCount {
-            let channelByteSize = Int(pcmBuffer.frameLength) * 4
-            let offset = channel * channelByteSize
+        let copyStatus = interleaved.withUnsafeBufferPointer { pointer -> OSStatus in
             CMBlockBufferReplaceDataBytes(
-                blockBuffer,
-                dataLength: channelByteSize,
-                offset: offset,
-                pointer: channelData[channel]
+                with: UnsafeRawPointer(pointer.baseAddress!),
+                blockBuffer: blockBuffer,
+                offsetIntoDestination: 0,
+                dataLength: byteSize
             )
         }
+        guard copyStatus == noErr else { return nil }
 
-        var asbd = format.streamDescription
+        var asbd = format.streamDescription.pointee
+        asbd.mFormatFlags &= ~kAudioFormatFlagIsNonInterleaved
+        asbd.mBytesPerFrame = UInt32(channelCount) * 4
+        asbd.mBytesPerPacket = asbd.mBytesPerFrame
+
         var formatDescription: CMAudioFormatDescription?
         guard
             CMAudioFormatDescriptionCreate(
-                kCFAllocatorDefault, &asbd, 0, nil, &formatDescription
+                allocator: nil,
+                asbd: &asbd,
+                layoutSize: 0,
+                layout: nil,
+                magicCookieSize: 0,
+                magicCookie: nil,
+                extensions: nil,
+                formatDescriptionOut: &formatDescription
             ) == noErr,
             let formatDescription
         else { return nil }
 
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: CMTimeValue(pcmBuffer.frameLength), timescale: CMTimeScale(format.sampleRate)),
+            duration: CMTime(value: CMTimeValue(frameLength), timescale: CMTimeScale(format.sampleRate)),
             presentationTimeStamp: pts,
             decodeTimeStamp: .invalid
         )
+        var sampleSizes: [Int] = [channelCount * MemoryLayout<Float>.size]
         var sampleBuffer: CMSampleBuffer?
         guard
-            CMSampleBufferCreate(
-                blockBuffer: blockBuffer,
+            CMSampleBufferCreateReady(
+                allocator: nil,
+                dataBuffer: blockBuffer,
                 formatDescription: formatDescription,
-                dataReady: true,
-                makeDataReadyCallback: nil,
-                refcon: nil,
-                sampleTimingEntry: &timing,
-                sampleEntryCount: 1,
+                sampleCount: frameLength,
+                sampleTimingEntryCount: 1,
+                sampleTimingArray: &timing,
+                sampleSizeEntryCount: 1,
+                sampleSizeArray: &sampleSizes,
                 sampleBufferOut: &sampleBuffer
             ) == noErr,
             let sampleBuffer
@@ -305,21 +326,11 @@ final class HLSMuxer {
         var formatDescription: CMVideoFormatDescription?
         guard
             CMVideoFormatDescriptionCreateForImageBuffer(
-                kCFAllocatorDefault, pixelBuffer, false, nil, &formatDescription
+                allocator: nil,
+                imageBuffer: pixelBuffer,
+                formatDescriptionOut: &formatDescription
             ) == noErr,
             let formatDescription
-        else { return nil }
-
-        var blockBuffer: CMBlockBuffer?
-        guard
-            CMBlockBufferCreateAccessible(
-                fromCVPixelBuffer: pixelBuffer,
-                pixelFormat: CVPixelBufferGetPixelFormatType(pixelBuffer),
-                planeIndex: 0,
-                options: [],
-                blockBufferOut: &blockBuffer
-            ) == noErr,
-            let blockBuffer
         else { return nil }
 
         var timing = CMSampleTimingInfo(
@@ -329,14 +340,11 @@ final class HLSMuxer {
         )
         var sampleBuffer: CMSampleBuffer?
         guard
-            CMSampleBufferCreate(
-                blockBuffer: blockBuffer,
+            CMSampleBufferCreateReadyWithImageBuffer(
+                allocator: nil,
+                imageBuffer: pixelBuffer,
                 formatDescription: formatDescription,
-                dataReady: true,
-                makeDataReadyCallback: nil,
-                refcon: nil,
-                sampleTimingEntry: &timing,
-                sampleEntryCount: 1,
+                sampleTiming: &timing,
                 sampleBufferOut: &sampleBuffer
             ) == noErr,
             let sampleBuffer
