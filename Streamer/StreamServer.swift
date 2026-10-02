@@ -31,9 +31,9 @@ final class StreamServer {
             listener.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
                 switch state {
-                case .ready(let endpoint):
-                    if let hostPort = endpoint as? NWEndpoint.HostPort {
-                        self.portValue = hostPort.port.uint16Value
+                case .ready:
+                    if let port = listener.port {
+                        self.portValue = port.rawValue
                     }
                     self.readySemaphore.signal()
                 case .failed(let error):
@@ -45,7 +45,7 @@ final class StreamServer {
             }
             listener.start(queue: self.queue)
         }
-        queue.async(work)
+        queue.async(execute: work)
     }
 
     func waitReady(timeout: TimeInterval) -> Bool {
