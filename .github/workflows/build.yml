@@ -27,11 +27,26 @@ jobs:
           UDID=$(xcrun simctl list devices available -j | jq -r '.devices | to_entries[] | select(.key | contains("watchOS")) | .value[] | select(.isAvailable) | .udid' | head -n 1)
           echo "Using simulator UDID: $UDID"
           xcodebuild test -project Watchkonomi.xcodeproj -scheme Watchkonomi \
-            -destination "platform=watchOS Simulator,id=$UDID" CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 60
+            -destination "platform=watchOS Simulator,id=$UDID" CODE_SIGNING_ALLOWED=NO > xctest.log 2>&1
+          rc=$?
+          tail -n 60 xctest.log
+          if [ $rc -ne 0 ]; then
+            echo "=== compiler errors ==="
+            grep -E "error:" xctest.log | head -n 80
+            exit 1
+          fi
       - name: Build watch app for device (unsigned)
         working-directory: v2
-        run: xcodebuild build -project Watchkonomi.xcodeproj -scheme Watchkonomi \
-          -configuration Debug -destination 'generic/platform=watchOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 30
+        run: |
+          xcodebuild build -project Watchkonomi.xcodeproj -scheme Watchkonomi \
+          -configuration Debug -destination 'generic/platform=watchOS' CODE_SIGNING_ALLOWED=NO > xcbuild.log 2>&1
+          rc=$?
+          tail -n 30 xcbuild.log
+          if [ $rc -ne 0 ]; then
+            echo "=== compiler errors ==="
+            grep -E "error:" xcbuild.log | head -n 80
+            exit 1
+          fi
       - name: Package watch IPA
         run: |
           APP=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path "*Debug-watchos/Watchkonomi.app" | head -n 1)
