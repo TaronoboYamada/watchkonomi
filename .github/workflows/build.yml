@@ -20,10 +20,10 @@ jobs:
         working-directory: v2
         run: |
           set -o pipefail
-          SIMNAME=$(xcrun simctl list devices available | sed -E -n 's/^ *(Apple Watch [^(]*\([^)]*\)).*/\1/p' | head -n 1)
-          echo "Simulator: $SIMNAME"
+          UDID=$(xcrun simctl list devices available -j | jq -r '.devices | to_entries[] | select(.key | contains("watchOS")) | .value[] | select(.isAvailable) | .udid' | head -n 1)
+          echo "Using simulator UDID: $UDID"
           xcodebuild test -project Watchkonomi.xcodeproj -scheme Watchkonomi \
-            -destination "platform=watchOS Simulator,name=$SIMNAME" CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 60
+            -destination "platform=watchOS Simulator,id=$UDID" CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 60
       - name: Build watch app for device (unsigned)
         working-directory: v2
         run: xcodebuild build -project Watchkonomi.xcodeproj -scheme Watchkonomi \
