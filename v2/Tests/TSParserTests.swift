@@ -1,5 +1,5 @@
 import XCTest
-@testable import WK
+@testable import Watchkonomi
 
 final class TSParserTests: XCTestCase {
 

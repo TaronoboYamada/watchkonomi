@@ -19,7 +19,7 @@ final class BroadcastManager: NSObject, ObservableObject {
 
     func start() {
         lastError = nil
-        browser.searchForServices(ofType: "_watchkonomi._tcp", inDomain: "")
+        browser.searchForServices(ofType: "_watchkonomi._tcp")
         controller.startBroadcast { [weak self] error in
             Task { @MainActor in
                 if let error {
