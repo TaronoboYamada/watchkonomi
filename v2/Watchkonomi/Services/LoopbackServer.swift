@@ -14,7 +14,7 @@ final class LoopbackServer {
         self.muxer = muxer
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = NWEndpoint.hostPort(
-            host: .ipv4(0x7F000001),
+            host: .name("127.0.0.1"),
             port: .any
         )
         let listener = NWListener(using: parameters)
