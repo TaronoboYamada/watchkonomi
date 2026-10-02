@@ -61,42 +61,42 @@ final class StreamServer {
 
     private func handle(_ connection: NWConnection) {
         connection.start(queue: queue)
-        var received = Data()
-        receiveHeaders(connection, into: &received) { [weak self] success in
+        receiveHeaders(connection, into: Data()) { [weak self] success, data in
             guard success, let self else {
                 connection.cancel()
                 return
             }
-            self.serve(connection: connection, request: received)
+            self.serve(connection: connection, request: data)
         }
     }
 
-    private func receiveHeaders(_ connection: NWConnection, into data: inout Data, completion: @escaping (Bool) -> Void) {
+    private func receiveHeaders(_ connection: NWConnection, into data: Data, completion: @escaping (Bool, Data) -> Void) {
         let terminator = Data("\r\n\r\n".utf8)
         connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] chunk, _, _, error in
-            guard let self else {
-                completion(false)
-                return
-            }
             if let error {
                 NSLog("Watchkonomi: receive error: \(error)")
-                completion(false)
+                completion(false, data)
                 return
             }
             guard let chunk else {
-                completion(false)
+                completion(false, data)
                 return
             }
+            var data = data
             data.append(chunk)
             if data.range(of: terminator) != nil {
-                completion(true)
+                completion(true, data)
                 return
             }
             if data.count > 65_536 {
-                completion(false)
+                completion(false, data)
                 return
             }
-            self.receiveHeaders(connection, into: &data, completion: completion)
+            guard let self else {
+                completion(false, data)
+                return
+            }
+            self.receiveHeaders(connection, into: data, completion: completion)
         }
     }
 
