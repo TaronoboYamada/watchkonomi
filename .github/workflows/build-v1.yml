@@ -1,0 +1,48 @@
+name: Build V1
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build-v1.yml"
+      - "Watchkonomi.xcodeproj/**"
+      - "Watchkonomi iOS/**"
+      - "Streamer/**"
+      - "WatchApp/**"
+      - "WatchApp Extension/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build iOS app for device (unsigned, Release)
+        run: |
+          set -o pipefail
+          xcodebuild build -project Watchkonomi.xcodeproj -scheme "Watchkonomi iOS" \
+            -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 40
+      - name: Build watch app for device (unsigned, Release)
+        run: |
+          set -o pipefail
+          xcodebuild build -project Watchkonomi.xcodeproj -scheme WatchApp \
+            -configuration Release -destination 'generic/platform=watchOS' CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 40
+      - name: Package IPAs
+        run: |
+          DERIVED="$HOME/Library/Developer/Xcode/DerivedData"
+          mkdir -p ipa-ios/Payload ipa-watch/Payload
+          IOS_APP=$(find "$DERIVED" -type d -path "*Release-iphoneos/Watchkonomi iOS.app" | head -n 1)
+          WATCH_APP=$(find "$DERIVED" -type d -path "*Release-watchos/WatchApp.app" | head -n 1)
+          if [ -z "$IOS_APP" ] || [ -z "$WATCH_APP" ]; then
+            echo "app product not found"
+            exit 1
+          fi
+          cp -R "$IOS_APP" ipa-ios/Payload/
+          cp -R "$WATCH_APP" ipa-watch/Payload/
+          (cd ipa-ios && zip -qr ../Watchkonomi-ios.ipa Payload)
+          (cd ipa-watch && zip -qr ../WatchApp-watch.ipa Payload)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipas-v1
+          path: |
+            Watchkonomi-ios.ipa
+            WatchApp-watch.ipa
