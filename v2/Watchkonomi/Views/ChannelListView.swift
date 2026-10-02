@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChannelListView: View {
     @AppStorage("serverURLText") private var serverURLText = "https://100-111-2-73.local.konomi.tv:7000"
+    @AppStorage("streamQuality") private var streamQuality = "240p"
     @State private var groups: [ChannelGroup] = []
     @State private var errorMessage: String?
     @State private var isLoading = false
@@ -48,8 +49,7 @@ struct ChannelListView: View {
             await loadChannels()
         }
         .navigationDestination(for: LiveChannel.self) { channel in
-            // TODO(Task 7c): PlayerView(channel: channel, baseURL: baseURL, quality: quality)
-            PlaceholderDetailView(channel: channel)
+            PlayerView(channel: channel, baseURL: baseURL, quality: streamQuality)
         }
     }
 
@@ -122,10 +122,4 @@ struct LogoView: View {
     }
 }
 
-struct PlaceholderDetailView: View {
-    let channel: LiveChannel
 
-    var body: some View {
-        Text(channel.name)
-    }
-}
