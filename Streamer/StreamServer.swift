@@ -17,7 +17,7 @@ final class StreamServer {
     }
 
     func start() {
-        queue.async { [weak self] in
+        let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let parameters = NWParameters.tcp
             guard let listener = try? NWListener(using: parameters, on: .any) else {
@@ -45,6 +45,7 @@ final class StreamServer {
             }
             listener.start(queue: self.queue)
         }
+        queue.async(work)
     }
 
     func waitReady(timeout: TimeInterval) -> Bool {
@@ -63,7 +64,7 @@ final class StreamServer {
         var received = Data()
         receiveHeaders(connection, into: &received) { [weak self] success in
             guard success, let self else {
-                connection.close()
+                connection.cancel()
                 return
             }
             self.serve(connection: connection, request: received)
@@ -72,7 +73,7 @@ final class StreamServer {
 
     private func receiveHeaders(_ connection: NWConnection, into data: inout Data, completion: @escaping (Bool) -> Void) {
         let terminator = Data("\r\n\r\n".utf8)
-        connection.receive(minimumIncompleteDataLength: 1, maximumDataLength: 16_384) { [weak self] chunk, _, _, error in
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] chunk, _, _, error in
             guard let self else {
                 completion(false)
                 return
@@ -101,7 +102,7 @@ final class StreamServer {
 
     private func serve(connection: NWConnection, request: Data) {
         guard let requestString = String(data: request, encoding: .utf8) else {
-            connection.close()
+            connection.cancel()
             return
         }
         let firstLine = requestString.split(separator: "\r\n").first ?? ""
@@ -159,7 +160,7 @@ final class StreamServer {
             payload.append(body)
         }
         connection.send(content: payload, completion: .contentProcessed { _ in
-            connection.close()
+            connection.cancel()
         })
     }
 }
