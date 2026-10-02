@@ -1,0 +1,32 @@
+name: Watchkonomi
+options:
+  bundleIdPrefix: com.example.watchkonomi
+  deploymentTarget:
+    watchOS: "10.0"
+targets:
+  Watchkonomi:
+    type: application
+    platform: watchOS
+    sources: [Watchkonomi]
+    info:
+      path: Watchkonomi/Info.plist
+      properties:
+        WKApplication: true
+        CFBundleDisplayName: Watchkonomi
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.watchkonomi.watch
+  WatchkonomiTests:
+    type: bundle.unit-test
+    platform: watchOS
+    sources: [Tests]
+    dependencies:
+      - target: Watchkonomi
+schemes:
+  Watchkonomi:
+    build:
+      targets: { Watchkonomi: all }
+    test:
+      targets: [WatchkonomiTests]
