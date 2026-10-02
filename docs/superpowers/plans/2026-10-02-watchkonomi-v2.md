@@ -23,6 +23,7 @@
 - 既存コード(`v2/` 以外)は **一切変更しない**(ルート `.github/workflows/build.yml` と `README.md`・`INSTALL-NOMAC.txt`・`.gitignore` を除く)
 - CI: `macos-26` ランナー、`brew install xcodegen` → `xcodegen generate` → watchOSシミュレータでXCTest実行 → generic watchOS 実機ビルド(非署名) → **watch IPA のみ**アーティファクト化
 - Mac無しで開発するため、ローカル検証は `swiftc -parse`(Windows Swiftツールチェーン)+ push後のCIが正。全タスクの最終検証はCIグリーン
+- 純粋Foundationロジックのタスク(2〜5)は、WindowsのSwiftツールチェーンでXCTestを実実行できる: `$env:TEMP\opencode\wktest` にSwiftPMパッケージ(`swiftLanguageModes: [.v5]`、`targets` が `swiftLanguageModes` より前)を作り、`v2/Watchkonomi/**` の該当ソース+`v2/Tests/**` をコピーして `swift test`。SwiftUI/Networkを使うファイルはローカルから除外(`swiftc -parse` のみ)
 
 ## Review Focus
 
@@ -128,10 +129,10 @@ jobs:
         working-directory: v2
         run: |
           set -o pipefail
-          SIMNAME=$(xcrun simctl list devices available | sed -E -n 's/^ *(Apple Watch [^(]*\([^)]*\)).*/\1/p' | head -n 1)
-          echo "Simulator: $SIMNAME"
+          UDID=$(xcrun simctl list devices available -j | jq -r '.devices | to_entries[] | select(.key | contains("watchOS")) | .value[] | select(.isAvailable) | .udid' | head -n 1)
+          echo "Using simulator UDID: $UDID"
           xcodebuild test -project Watchkonomi.xcodeproj -scheme Watchkonomi \
-            -destination "platform=watchOS Simulator,name=$SIMNAME" CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 60
+            -destination "platform=watchOS Simulator,id=$UDID" CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 60
       - name: Build watch app for device (unsigned)
         working-directory: v2
         run: xcodebuild build -project Watchkonomi.xcodeproj -scheme Watchkonomi \
@@ -264,7 +265,7 @@ git commit -m "v2: KonomiTV URL building and base URL sanitization"
 
 **テストヘルパーの正確な仕様**(実装者が選択余地のない箇所):
 - ヘッダ: `b0=0x47`、`b1=(pusi ? 0x40 : 0x00) | ((pid >> 8) & 0x1F)`、`b2=pid & 0xFF`、`b3=0x10 | (continuity & 0x0F)`(payload-only, AFC=01)
-- PES(pusi==true かつ pts != nil のとき): payload先頭に `[0x00,0x00,0x01,0xE0, 0x00,0x00, 0x80, 0x05, PTS5バイト]`、残り `0xFF` 埋め
+- PES(pusi==true かつ pts != nil のとき): payload先頭に `[0x00,0x00,0x01,0xE0, 0x00,0x00, 0xA0, 0x05, PTS5バイト]`、残り `0xFF` 埋め(`0xA0` = marker 0x80 + PTS_DTS_flags「PTS only」0x20)
 - PTS5バイト: `p = UInt64((pts * 90000).rounded())`(33bit) とし、
   `b0 = 0x21 | (UInt8((p >> 30) & 0x07) << 1)`、`b1 = UInt8((p >> 22) & 0xFF)`、`b2 = 0x01 | (UInt8((p >> 15) & 0x7F) << 1)`、`b3 = UInt8((p >> 7) & 0xFF)`、`b4 = 0x01 | (UInt8(p & 0x7F) << 1)`
 
@@ -277,7 +278,8 @@ git commit -m "v2: KonomiTV URL building and base URL sanitization"
 
 - [ ] **Step 2: テスト失敗を確認**
 
-- [ ] **Step 3: 実装** — `extractPTS` はパケットを走査: ヘッダ4バイト→flagsのAFC bits(5-4)が 2/3 なら adaptation field長分スキップ→payloadが `00 00 01` で始まり flags(第7バイト)==0x80、header_len(第8バイト)>=5 なら PTS 5バイトを逆変換: `raw = (UInt64((b0 & 0x0E) >> 1) << 30) | (UInt64(b1) << 22) | (UInt64(b2 >> 1) << 15) | (UInt64(b3) << 7) | (UInt64(b4) >> 1)`、`return Double(raw) / 90000.0`
+- [ ] **Step 3: 実装** — `extractPTS` はパケットを走査: ヘッダ4バイト→flagsのAFC bits(5-4)が 2/3 なら adaptation field長分スキップ→payloadが `00 00 01` で始まり PTS_DTS_flags(bits5-4)==0x2(PTS only)または0x3(両方)、header_len(第8バイト)>=5 なら PTS 5バイトを逆変換: `raw = (UInt64((b0 & 0x0E) >> 1) << 30) | (UInt64(b1) << 22) | (UInt64(b2 >> 1) << 15) | (UInt64(b3) << 7) | (UInt64(b4) >> 1)`、`return Double(raw) / 90000.0`
+- **実行時メモ(実装済み)**: Windows Swift 6.4 ツールチェーンでは `Data.removeFirst()` 後のサブスクリプト読み(`d[0]`)がクラッシュする(c000001d)。`extractPackets` は `removeSubrange(0..<n)` を使うこと。また Data スライスのインデックスはリベースされないため、パケット先頭を参照する際は `Data(slice)` でコピーすること
 
 - [ ] **Step 4: CI PASS確認** / **Step 5: Commit**
 
@@ -300,10 +302,11 @@ git commit -m "v2: MPEG-TS packet extraction and PES PTS parsing"
   - `final class StreamMuxer: ObservableObject`
     - `enum MuxerState: Equatable { case idle, connecting, onair, failed(String) }`
     - `init(targetSegmentSeconds: Double = 2.0, windowSize: Int = 8, readySegments: Int = 3)`
-    - `@Published private(set) var state: MuxerState`(`.connecting` で開始し、最初のセグメント完成で `.onair`)
-    - `func ingest(_ data: Data)` / `func stop()`
+    - `@Published private(set) var state: MuxerState`(初期 `.idle`。`beginConnection()` で `.connecting`、最初のセグメント完成で `.onair`、`fail(_:)` で `.failed`)
+    - `func beginConnection()` / `func fail(_ message: String)` / `func ingest(_ data: Data)` / `func stop()`
     - `var isReady: Bool`(`segments.count >= readySegments`)
     - `var firstMediaSequence: Int` / `func playlist() -> String?`(未readyは `nil`)/ `func segmentData(index: Int) -> Data?`(絶対シーケンス番号)
+    - 実装メモ: 全パブリックメソッドは `NSLock` で保護(pumpタスク/ループバックサーバー/UI が同時アクセスするため)。state 変更はメインスレッドで反映
 
 **切断規則(正確な仕様)：**
 1. `ingest` は受信チャンクを内部 `pending` に足し、`TSParser.extractPackets` で完了パケットごとに処理
