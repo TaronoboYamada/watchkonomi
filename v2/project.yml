@@ -18,6 +18,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.watchkonomi.watch
+        SWIFT_VERSION: "5.0"
   WatchkonomiTests:
     type: bundle.unit-test
     platform: watchOS

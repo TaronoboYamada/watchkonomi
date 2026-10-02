@@ -30,7 +30,7 @@ final class PlaybackModel: ObservableObject {
             displayChannelID: channel.displayChannelID,
             quality: quality
         )
-        pumpTask = Task { [weak self] in
+        pumpTask = Task.detached { [weak self] in
             do {
                 try await StreamPump.run(url: streamURL, muxer: muxer, session: KonomiTVClient.streamSession)
                 self?.muxer?.fail("ストリームが終了しました")
