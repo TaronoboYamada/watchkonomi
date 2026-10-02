@@ -14,13 +14,12 @@ final class BroadcastManager: NSObject, ObservableObject {
     override init() {
         super.init()
         controller.delegate = self
-        controller.broadcastExtensionBundleID = "com.example.watchkonomi.ios.streamer"
         browser.delegate = self
-        browser.searchForServices(withDomain: "", type: "_watchkonomi._tcp")
     }
 
     func start() {
         lastError = nil
+        browser.searchForServices(ofType: "_watchkonomi._tcp")
         controller.startBroadcast { [weak self] error in
             Task { @MainActor in
                 if let error {
@@ -52,7 +51,7 @@ extension BroadcastManager: NetServiceBrowserDelegate {
             guard self.streamURL == nil else { return }
             self.resolvingService = service
             service.delegate = self
-            browser.resolve(service, timeout: 5)
+            service.resolve(withTimeout: 5)
         }
     }
 
@@ -86,7 +85,7 @@ extension BroadcastManager: NetServiceDelegate {
     }
 
     static func ipv4Address(from service: NetService) -> String? {
-        for raw in service.addresses {
+        for raw in service.addresses ?? [] {
             let bytes = [UInt8](raw as Data)
             guard bytes.count >= 8 else { continue }
             let family = UInt16(bytes[0]) | (UInt16(bytes[1]) << 8)
