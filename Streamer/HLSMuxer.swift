@@ -72,7 +72,7 @@ final class HLSMuxer {
 
     // MARK: - Audio
 
-    func appendAudio(_ pcmBuffer: AVAudioPCMBuffer, config: AudioConfig, at pts: CMTime) {
+    func appendAudio(_ sampleBuffer: CMSampleBuffer, config: AudioConfig) {
         lock.lock()
         defer { lock.unlock() }
 
@@ -88,7 +88,7 @@ final class HLSMuxer {
             }
             return
         }
-        guard let sampleBuffer = Self.makeAudioSampleBuffer(from: pcmBuffer, at: pts) else { return }
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         ensureSessionStarted(writer: writer, at: pts)
         audioInput.append(sampleBuffer)
     }
@@ -235,93 +235,6 @@ final class HLSMuxer {
     }
 
     // MARK: - Sample buffer wrapping
-
-    private static func makeAudioSampleBuffer(from pcmBuffer: AVAudioPCMBuffer, at pts: CMTime) -> CMSampleBuffer? {
-        let format = pcmBuffer.format
-        let frameLength = Int(pcmBuffer.frameLength)
-        let channelCount = Int(format.channelCount)
-        guard frameLength > 0, channelCount > 0, let channelData = pcmBuffer.floatChannelData else { return nil }
-
-        var interleaved = [Float]()
-        interleaved.reserveCapacity(frameLength * channelCount)
-        for frame in 0..<frameLength {
-            for channel in 0..<channelCount {
-                interleaved.append(channelData[channel][frame])
-            }
-        }
-        let byteSize = interleaved.count * MemoryLayout<Float>.size
-
-        var blockBuffer: CMBlockBuffer?
-        guard
-            CMBlockBufferCreateWithMemoryBlock(
-                allocator: nil,
-                memoryBlock: nil,
-                blockLength: byteSize,
-                blockAllocator: nil,
-                customBlockSource: nil,
-                offsetToData: 0,
-                dataLength: byteSize,
-                flags: 0,
-                blockBufferOut: &blockBuffer
-            ) == noErr,
-            let blockBuffer
-        else { return nil }
-
-        let copyStatus = interleaved.withUnsafeBufferPointer { pointer -> OSStatus in
-            CMBlockBufferReplaceDataBytes(
-                with: UnsafeRawPointer(pointer.baseAddress!),
-                blockBuffer: blockBuffer,
-                offsetIntoDestination: 0,
-                dataLength: byteSize
-            )
-        }
-        guard copyStatus == noErr else { return nil }
-
-        var asbd = format.streamDescription.pointee
-        asbd.mFormatFlags &= ~kAudioFormatFlagIsNonInterleaved
-        asbd.mBytesPerFrame = UInt32(channelCount) * 4
-        asbd.mBytesPerPacket = asbd.mBytesPerFrame
-
-        var formatDescription: CMAudioFormatDescription?
-        guard
-            CMAudioFormatDescriptionCreate(
-                allocator: nil,
-                asbd: &asbd,
-                layoutSize: 0,
-                layout: nil,
-                magicCookieSize: 0,
-                magicCookie: nil,
-                extensions: nil,
-                formatDescriptionOut: &formatDescription
-            ) == noErr,
-            let formatDescription
-        else { return nil }
-
-        var timing = CMSampleTimingInfo(
-            duration: CMTime(value: CMTimeValue(frameLength), timescale: CMTimeScale(format.sampleRate)),
-            presentationTimeStamp: pts,
-            decodeTimeStamp: .invalid
-        )
-        var sampleSizes: [Int] = [channelCount * MemoryLayout<Float>.size]
-        var sampleBuffer: CMSampleBuffer?
-        guard
-            CMSampleBufferCreateReady(
-                allocator: nil,
-                dataBuffer: blockBuffer,
-                formatDescription: formatDescription,
-                sampleCount: frameLength,
-                sampleTimingEntryCount: 1,
-                sampleTimingArray: &timing,
-                sampleSizeEntryCount: 1,
-                sampleSizeArray: &sampleSizes,
-                sampleBufferOut: &sampleBuffer
-            ) == noErr,
-            let sampleBuffer
-        else { return nil }
-
-        return sampleBuffer
-    }
-
     private static func makeSampleBuffer(from pixelBuffer: CVPixelBuffer, at pts: CMTime) -> CMSampleBuffer? {
         var formatDescription: CMVideoFormatDescription?
         guard
