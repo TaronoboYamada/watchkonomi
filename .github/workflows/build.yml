@@ -1,0 +1,68 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    # Xcode 27 対応の macOS ランナー(利用できなければ macos-15 に変更)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build watchOS app for Simulator
+        run: |
+          xcodebuild \
+            -project Watchkonomi.xcodeproj \
+            -scheme WatchApp \
+            -configuration Debug \
+            -destination 'generic/platform=watchOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Build iOS app for Simulator
+        run: |
+          xcodebuild \
+            -project Watchkonomi.xcodeproj \
+            -scheme "Watchkonomi iOS" \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Build iOS app for device (unsigned)
+        run: |
+          xcodebuild \
+            -project Watchkonomi.xcodeproj \
+            -scheme "Watchkonomi iOS" \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Build watch app for device (unsigned)
+        run: |
+          xcodebuild \
+            -project Watchkonomi.xcodeproj \
+            -scheme WatchApp \
+            -configuration Debug \
+            -destination 'generic/platform=watchOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Package IPAs
+        run: |
+          DERIVED="$HOME/Library/Developer/Xcode/DerivedData"
+          mkdir -p ipa-ios/Payload ipa-watch/Payload
+          IOS_APP=$(find "$DERIVED" -type d -path "*Debug-iphoneos/Watchkonomi iOS.app" | head -n 1)
+          WATCH_APP=$(find "$DERIVED" -type d -path "*Debug-watchos/WatchApp.app" | head -n 1)
+          if [ -z "$IOS_APP" ] || [ -z "$WATCH_APP" ]; then
+            echo "app product not found"
+            exit 1
+          fi
+          cp -R "$IOS_APP" ipa-ios/Payload/
+          cp -R "$WATCH_APP" ipa-watch/Payload/
+          (cd ipa-ios && zip -qr ../Watchkonomi-ios.ipa Payload)
+          (cd ipa-watch && zip -qr ../WatchApp-watch.ipa Payload)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipas
+          path: |
+            Watchkonomi-ios.ipa
+            WatchApp-watch.ipa
