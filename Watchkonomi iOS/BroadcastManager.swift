@@ -8,8 +8,8 @@ final class BroadcastManager: NSObject, ObservableObject {
     @Published private(set) var lastError: String?
 
     private let controller = RPBroadcastController()
-    private let browser = NSNetServiceBrowser()
-    private var resolvingService: NSNetService?
+    private let browser = NetServiceBrowser()
+    private var resolvingService: NetService?
 
     override init() {
         super.init()
@@ -46,8 +46,8 @@ extension BroadcastManager: RPBroadcastControllerDelegate {
     }
 }
 
-extension BroadcastManager: NSNetServiceBrowserDelegate {
-    nonisolated func netServiceBrowser(_ browser: NSNetServiceBrowser, didFind service: NSNetService, moreComing: Bool) {
+extension BroadcastManager: NetServiceBrowserDelegate {
+    nonisolated func netServiceBrowser(_ browser: NetServiceBrowser, didFind service: NetService, moreComing: Bool) {
         Task { @MainActor in
             guard self.streamURL == nil else { return }
             self.resolvingService = service
@@ -56,7 +56,7 @@ extension BroadcastManager: NSNetServiceBrowserDelegate {
         }
     }
 
-    nonisolated func netServiceBrowser(_ browser: NSNetServiceBrowser, didRemove service: NSNetService, moreComing: Bool) {
+    nonisolated func netServiceBrowser(_ browser: NetServiceBrowser, didRemove service: NetService, moreComing: Bool) {
         Task { @MainActor in
             if self.resolvingService === service {
                 self.resolvingService = nil
@@ -67,8 +67,8 @@ extension BroadcastManager: NSNetServiceBrowserDelegate {
     }
 }
 
-extension BroadcastManager: NSNetServiceDelegate {
-    nonisolated func netServiceDidResolveAddress(_ sender: NSNetService) {
+extension BroadcastManager: NetServiceDelegate {
+    nonisolated func netServiceDidResolveAddress(_ sender: NetService) {
         Task { @MainActor in
             guard let ip = Self.ipv4Address(from: sender) else { return }
             let port = sender.port
@@ -77,7 +77,7 @@ extension BroadcastManager: NSNetServiceDelegate {
         }
     }
 
-    nonisolated func netService(_ sender: NSNetService, didNotResolve error: Error) {
+    nonisolated func netService(_ sender: NetService, didNotResolve error: Error) {
         Task { @MainActor in
             if self.resolvingService === sender {
                 self.resolvingService = nil
@@ -85,7 +85,7 @@ extension BroadcastManager: NSNetServiceDelegate {
         }
     }
 
-    static func ipv4Address(from service: NSNetService) -> String? {
+    static func ipv4Address(from service: NetService) -> String? {
         for raw in service.addresses {
             let bytes = [UInt8](raw as Data)
             guard bytes.count >= 8 else { continue }

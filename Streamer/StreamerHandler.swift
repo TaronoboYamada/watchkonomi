@@ -7,7 +7,7 @@ import ReplayKit
 final class StreamerHandler: RPBroadcastSampleHandler {
     private var muxer: HLSMuxer?
     private var server: StreamServer?
-    private var bonjour: NSNetService?
+    private var bonjour: NetService?
     private var ciContext: CIContext?
     private var rootDir: URL?
 
@@ -29,7 +29,7 @@ final class StreamerHandler: RPBroadcastSampleHandler {
         server.start()
         if server.waitReady(timeout: 5), server.port > 0 {
             self.server = server
-            let service = NSNetService(
+            let service = NetService(
                 domain: "",
                 type: "_watchkonomi._tcp",
                 name: "Watchkonomi-\(ProcessInfo.processInfo.processIdentifier)",
@@ -176,8 +176,8 @@ final class StreamerHandler: RPBroadcastSampleHandler {
     }
 }
 
-extension StreamerHandler: NSNetServiceDelegate {
-    func netService(_ sender: NSNetService, didNotPublish error: Error) {
+extension StreamerHandler: NetServiceDelegate {
+    func netService(_ sender: NetService, didNotPublish error: Error) {
         NSLog("Watchkonomi: Bonjour publish failed: \(error)")
     }
 }
