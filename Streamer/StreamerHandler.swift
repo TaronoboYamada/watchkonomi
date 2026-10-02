@@ -116,6 +116,7 @@ final class StreamerHandler: RPBroadcastSampleHandler {
         ciContext.render(
             scaled,
             to: output,
+            bounds: CGRect(x: 0, y: 0, width: size.width, height: size.height),
             colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!
         )
 
