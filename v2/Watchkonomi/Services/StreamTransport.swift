@@ -3,6 +3,7 @@ import Foundation
 enum KonomiTVError: Error {
     case notAStream
     case serverFailedToStart
+    case httpError(Int)
 }
 
 final class InsecureTrustDelegate: NSObject, URLSessionDelegate {

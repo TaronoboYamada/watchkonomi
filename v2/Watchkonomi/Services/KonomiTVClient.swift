@@ -41,4 +41,13 @@ struct KonomiTVClient {
     private func urlWithPath(_ path: String) -> URL {
         URL(string: path, relativeTo: baseURL) ?? baseURL
     }
+
+    func fetchChannels() async throws -> [ChannelGroup] {
+        let (data, response) = try await Self.streamSession.data(from: channelsURL)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw KonomiTVError.httpError(0)
+        }
+        let decoded = try JSONDecoder().decode(LiveChannelsResponse.self, from: data)
+        return decoded.groups
+    }
 }

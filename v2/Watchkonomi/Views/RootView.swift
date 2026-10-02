@@ -5,9 +5,8 @@ struct RootView: View {
 
     var body: some View {
         NavigationStack {
-            Text("Watchkonomi")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
+            ChannelListView()
+                .navigationTitle("Watchkonomi")
                 .toolbar {
                     ToolbarItem {
                         Button {
@@ -24,5 +23,6 @@ struct RootView: View {
                     }
                 }
         }
+        .preferredColorScheme(.dark)
     }
 }
