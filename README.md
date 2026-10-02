@@ -1,5 +1,37 @@
 # Watchkonomi
 
+Apple WatchでKonomiTVの1segを再生するプロジェクト。
+
+## v2(新・Watch単体版)
+
+`v2/` フォルダには、**Apple WatchからKonomiTVサーバーに直接接続する**新バージョンがあります。
+iPhoneアプリや画面キャプチャは不要です。
+
+### 仕組み
+
+```
+Apple Watch
+  ├ GET /api/channels → チャンネル一覧(KonomiTV /tv/ 風UI)
+  └ 再生時: GET /api/streams/live/{ch}/{画質}/mpegts (MPEG-TS受信)
+     → アプリ内で2秒単位のセグメントに分割(再エンコードなし)
+     → ループバックHTTPサーバー(127.0.0.1)でライブHLS配信
+     → AVPlayerで再生
+```
+
+- WatchはKonomiTVサーバーに到達できること(同一Wi-Fi、またはiPhoneのTailscale経由)
+- 再生遅延はHLSの性質上 約10〜20秒
+- 画質は設定画面で変更可能(既定 240p)
+- サーバーURLは設定画面で変更可能(既定 `https://100-111-2-73.local.konomi.tv:7000`)
+
+### ビルド
+
+pushすると `Build` ワークフローが自動でビルドします(XcodeGen生成 → watchOSシミュレータでユニットテスト → watch IPA)。
+生成された `Watchkonomi-watch.ipa` をAltStoreでインストール(INSTALL-NOMAC.txt 参照)。
+
+---
+
+## v1(旧・iPhone中継版)
+
 Apple Watchで、iPhoneのkonomitvから受信した1segの映像・音声を再生するプロジェクト。
 
 ## 仕組み
