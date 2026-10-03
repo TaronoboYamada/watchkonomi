@@ -12,6 +12,7 @@ targets:
       path: Watchkonomi/Info.plist
       properties:
         WKApplication: true
+        WKWatchOnly: true
         CFBundleDisplayName: Watchkonomi
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
