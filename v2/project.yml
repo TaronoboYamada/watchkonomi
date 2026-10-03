@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.example.watchkonomi
   deploymentTarget:
     watchOS: "10.0"
+    iOS: "16.0"
 targets:
   Watchkonomi:
     type: application
@@ -12,7 +13,7 @@ targets:
       path: Watchkonomi/Info.plist
       properties:
         WKApplication: true
-        WKWatchOnly: true
+        WKCompanionAppBundleIdentifier: com.example.watchkonomi
         CFBundleDisplayName: Watchkonomi
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
@@ -20,6 +21,22 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.watchkonomi.watch
         SWIFT_VERSION: "5.0"
+  WatchkonomiCompanion:
+    type: application
+    platform: iOS
+    sources: [Companion]
+    dependencies:
+      - target: Watchkonomi
+    info:
+      path: Companion/Info.plist
+      properties:
+        CFBundleDisplayName: Watchkonomi
+        UILaunchScreen: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.watchkonomi
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
   WatchkonomiTests:
     type: bundle.unit-test
     platform: watchOS
@@ -32,3 +49,6 @@ schemes:
       targets: { Watchkonomi: all }
     test:
       targets: [WatchkonomiTests]
+  WatchkonomiCompanion:
+    build:
+      targets: { WatchkonomiCompanion: all }
