@@ -17,7 +17,7 @@ final class LoopbackServer {
             host: NWEndpoint.Host("127.0.0.1"),
             port: .any
         )
-        let listener = NWListener(using: parameters)
+        let listener = try NWListener(using: parameters)
         listener.newConnectionHandler = { [weak self] connection in
             guard let self else { return }
             HTTPConnectionHandler(connection: connection, server: self).start()
