@@ -39,7 +39,7 @@ jobs:
         working-directory: v2
         run: |
           xcodebuild build -project Watchkonomi.xcodeproj -scheme Watchkonomi \
-          -configuration Debug -destination 'generic/platform=watchOS' CODE_SIGNING_ALLOWED=NO > xcbuild.log 2>&1 || rc=$?
+          -configuration Release -destination 'generic/platform=watchOS' CODE_SIGNING_ALLOWED=NO > xcbuild.log 2>&1 || rc=$?
           rc=${rc:-0}
           tail -n 30 xcbuild.log
           if [ $rc -ne 0 ]; then
@@ -49,14 +49,14 @@ jobs:
           fi
       - name: Package watch IPA
         run: |
-          APP=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path "*Debug-watchos/Watchkonomi.app" | head -n 1)
+          APP=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path "*Release-watchos/Watchkonomi.app" | head -n 1)
           mkdir -p ipa-watch/Payload && cp -R "$APP" ipa-watch/Payload/
           (cd ipa-watch && zip -qr ../Watchkonomi-watch.ipa Payload)
       - name: Build companion app for device (unsigned)
         working-directory: v2
         run: |
           xcodebuild build -project Watchkonomi.xcodeproj -scheme WatchkonomiCompanion \
-          -configuration Debug -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO > xcbuild-ios.log 2>&1 || rc=$?
+          -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO > xcbuild-ios.log 2>&1 || rc=$?
           rc=${rc:-0}
           tail -n 30 xcbuild-ios.log
           if [ $rc -ne 0 ]; then
@@ -66,7 +66,7 @@ jobs:
           fi
       - name: Package companion IPA
         run: |
-          APP=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path "*Debug-iphoneos/Watchkonomi.app" | head -n 1)
+          APP=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -path "*Release-iphoneos/Watchkonomi.app" | head -n 1)
           mkdir -p ipa/Payload && cp -R "$APP" ipa/Payload/
           (cd ipa && zip -qr ../Watchkonomi.ipa Payload)
       - uses: actions/upload-artifact@v4
